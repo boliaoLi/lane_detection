@@ -7,7 +7,7 @@ import torch
 from mmcv import ConfigDict
 from mmcv.ops import nms
 
-from bbox import bbox_mapping_back
+from ..line import bbox_mapping_back
 
 
 def merge_aug_proposals(aug_proposals, img_metas, cfg):

@@ -17,7 +17,7 @@ from mmcv.runner.base_module import BaseModule
 from mmcv.utils import to_2tuple
 from torch.nn.init import normal_
 
-from mmdet.models.utils.builder import TRANSFORMER
+from lanedet.models.utils.builder import TRANSFORMER
 
 try:
     from mmcv.ops.multi_scale_deform_attn import MultiScaleDeformableAttention

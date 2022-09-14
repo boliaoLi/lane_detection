@@ -2,7 +2,7 @@
 import torch
 import torch.nn.functional as F
 
-from mmdet.core.bbox.iou_calculators import bbox_overlaps
+from lanedet.core.line.iou_calculators import bbox_overlaps
 from .builder import MATCH_COST
 from lanedet.core.line.iou_calculators import line_overlaps
 
@@ -77,7 +77,7 @@ class FocalLossCost:
             default False.
 
      Examples:
-         >>> from mmdet.core.bbox.match_costs.match_cost import FocalLossCost
+         >>> from lanedet.core.line.match_costs.match_cost import FocalLossCost
          >>> import torch
          >>> self = FocalLossCost()
          >>> cls_pred = torch.rand(4, 3)
@@ -170,7 +170,7 @@ class ClassificationCost:
          weight (int | float, optional): loss_weight
 
      Examples:
-         >>> from mmdet.core.bbox.match_costs.match_cost import \
+         >>> from lanedet.core.line.match_costs.match_cost import \
          ... ClassificationCost
          >>> import torch
          >>> self = ClassificationCost()
@@ -217,7 +217,7 @@ class IoUCost:
          weight (int | float, optional): loss weight
 
      Examples:
-         >>> from mmdet.core.bbox.match_costs.match_cost import IoUCost
+         >>> from lanedet.core.line.match_costs.match_cost import IoUCost
          >>> import torch
          >>> self = IoUCost()
          >>> bboxes = torch.FloatTensor([[1,1, 2, 2], [2, 2, 3, 4]])
@@ -319,7 +319,7 @@ class CrossEntropyLossCost:
         use_sigmoid (bool, optional): Whether the prediction uses sigmoid
                 of softmax. Defaults to True.
     Examples:
-         >>> from mmdet.core.bbox.match_costs import CrossEntropyLossCost
+         >>> from lanedet.core.line.match_costs import CrossEntropyLossCost
          >>> import torch
          >>> bce = CrossEntropyLossCost(use_sigmoid=True)
          >>> cls_pred = torch.tensor([[7.6, 1.2], [-1.3, 10]])

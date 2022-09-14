@@ -8,28 +8,32 @@ from mmcv.cnn import Conv2d, Linear, build_activation_layer
 from mmcv.cnn.bricks.transformer import FFN, build_positional_encoding
 from mmcv.runner import force_fp32
 
-from mmdet.core import (bbox_cxcywh_to_xyxy, bbox_xyxy_to_cxcywh,
-                        build_assigner, build_sampler, multi_apply,
+from lanedet.core import (build_assigner, build_sampler, multi_apply,
                         reduce_mean)
-from mmdet.models.utils import build_transformer
 from ..builder import HEADS, build_loss
 from .detr_head import DETRHead
-from .deformable_detr_head import DeformableDETRHead
 
 
 @HEADS.register_module()
 class LaneFormerHead(DETRHead):
     def __init__(self,
                  *args,
-                 points_num=72,
+                 num_points=72,
                  loss_line=dict(type='L1Loss', loss_weight=5.0),
-                 loss_iou=dict(type='IoULoss', loss_weight=2.0),
-                 with_box_refine=False,
+                 loss_iou=dict(type='LineIoULoss', loss_weight=2.0),
+                 train_cfg=dict(
+                     assigner=dict(
+                         type='HungarianAssigner',
+                         cls_cost=dict(type='ClassificationCost', weight=1.),
+                         reg_cost=dict(type='LineL1Cost', weight=5.0),
+                         iou_cost=dict(
+                             type='LineIoUCost', weight=2.0))),
                  transformer=None,
                  **kwargs):
-        self.points_num = points_num
-        super(LaneFormerHead, self).__init__(*args, with_box_refine=with_box_refine,
-                                             transformer=transformer, **kwargs)
+        self.num_points = num_points
+        super(LaneFormerHead, self).__init__(*args, transformer=transformer, **kwargs)
+        assigner = train_cfg['assigner']
+        self.assigner = build_assigner(assigner)
         self.loss_line = build_loss(loss_line)
         self.loss_iou = build_loss(loss_iou)
 
@@ -46,7 +50,7 @@ class LaneFormerHead(DETRHead):
             self.act_cfg,
             dropout=0.0,
             add_residual=False)
-        self.fc_reg = Linear(self.embed_dims, self.points_num)
+        self.fc_reg = Linear(self.embed_dims, self.num_points)
         self.query_embedding = nn.Embedding(self.num_query, self.embed_dims)
 
     def forward_single(self, x, img_metas):
@@ -215,22 +219,13 @@ class LaneFormerHead(DETRHead):
         num_total_pos = loss_cls.new_tensor([num_total_pos])
         num_total_pos = torch.clamp(reduce_mean(num_total_pos), min=1).item()
 
-        # construct factors used for rescale bboxes
-        factors = []
-        for img_meta, line_pred in zip(img_metas, line_preds):
-            img_h, img_w, _ = img_meta['img_shape']
-            factor = line_pred.new_tensor([img_w, img_h, img_w,
-                                           img_h]).unsqueeze(0).repeat(
-                line_pred.size(0), 1)
-            factors.append(factor)
-        factors = torch.cat(factors, 0)
-
-        # regression IoU loss, defaultly GIoU loss
+        # regression IoU loss
+        line_preds = line_preds.reshape(-1, self.num_points)
         loss_iou = self.loss_iou(
-            line_preds, line_targets, line_weights, avg_factor=num_total_pos)
+            line_preds, line_targets, line_weights, aligned=True)
 
         # regression L1 loss
-        loss_bbox = self.loss_bbox(
+        loss_line = self.loss_line(
             line_preds, line_targets, line_weights, avg_factor=num_total_pos)
         return loss_cls, loss_line, loss_iou
 
@@ -326,7 +321,7 @@ class LaneFormerHead(DETRHead):
                 - neg_inds (Tensor): Sampled negative indices for each image.
         """
 
-        num_lines = bbox_pred.size(0)
+        num_lines = line_pred.size(0)
         # assigner and sampler
         assign_result = self.assigner.assign(line_pred, cls_score, gt_lines,
                                              gt_labels, img_meta,
@@ -343,17 +338,16 @@ class LaneFormerHead(DETRHead):
         labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds]
         label_weights = gt_lines.new_ones(num_lines)
 
-        # bbox targets
+        # line targets
         line_targets = torch.zeros_like(line_pred)
         line_weights = torch.zeros_like(line_pred)
         line_weights[pos_inds] = 1.0
         img_h, img_w, _ = img_meta['img_shape']
 
-        # DETR regress the relative position of boxes (cxcywh) in the image.
+        # laneformer regress the relative position of lines in the image.
         # Thus the learning target should be normalized by the image size
-        factor = line_pred.new_tensor([img_w, img_h, img_w,
-                                       img_h]).unsqueeze(0)
-        pos_gt_lines_targets = sampling_result.pos_gt_lines / factor
+        factor = img_w
+        pos_gt_lines_targets = sampling_result.pos_gt_bboxes / factor
         line_targets[pos_inds] = pos_gt_lines_targets
         return (labels, label_weights, line_targets, line_weights, pos_inds,
                 neg_inds)

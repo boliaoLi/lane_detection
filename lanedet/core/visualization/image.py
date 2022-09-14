@@ -7,7 +7,6 @@ import pycocotools.mask as mask_util
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon
 
-from mmdet.core.evaluation.panoptic_utils import INSTANCE_OFFSET
 from ..mask.structures import bitmap_to_polygon
 from ..utils import mask2ndarray
 from .palette import get_palette, palette_val
@@ -18,6 +17,20 @@ __all__ = [
 ]
 
 EPS = 1e-2
+
+
+def get_label_positions(lines):
+    """
+    compute the lines center position to draw labels on the image
+    :param lines: shape[num_lines, 72]
+    :return: positions: shape[num_lines, 2]
+    """
+    lines_x = lines[:, :-2]
+    lines_y = lines[:, -2:]
+    position_x = np.mean(lines_x, axis=1)
+    position_y = np.mean(lines_y, axis=1)
+    position = np.concatenate([position_x, position_y],axis=1)
+    return position
 
 
 def color_val_matplotlib(color):
@@ -76,13 +89,13 @@ def _get_bias_color(base, max_dist=30):
     return np.clip(new_color, 0, 255, new_color)
 
 
-def draw_bboxes(ax, bboxes, color='g', alpha=0.8, thickness=2):
+def draw_lines(ax, lines, color='g', alpha=0.8, thickness=2):
     """Draw bounding boxes on the axes.
 
     Args:
         ax (matplotlib.Axes): The input axes.
-        bboxes (ndarray): The input bounding boxes with the shape
-            of (n, 4).
+        lines (ndarray): The input lines with the shape
+            of (n, 72) in format(x1,x2,x3...,x72,y0,y1).
         color (list[tuple] | matplotlib.color): the colors for each
             bounding boxes.
         alpha (float): Transparency of bounding boxes. Default: 0.8.
@@ -92,11 +105,10 @@ def draw_bboxes(ax, bboxes, color='g', alpha=0.8, thickness=2):
         matplotlib.Axes: The result axes.
     """
     polygons = []
-    for i, bbox in enumerate(bboxes):
-        bbox_int = bbox.astype(np.int32)
-        poly = [[bbox_int[0], bbox_int[1]], [bbox_int[0], bbox_int[3]],
-                [bbox_int[2], bbox_int[3]], [bbox_int[2], bbox_int[1]]]
-        np_poly = np.array(poly).reshape((4, 2))
+    for i, line in enumerate(lines):
+        line_int_x = line[:-2].astype(np.int32)
+        line_int_y = np.linspace(line[-2], line[-1], len(line)-2).astype(np.int32)
+        np_poly = np.array([line_int_x, line_int_y]).T    # np_poly.shape = [num_points,2]
         polygons.append(Polygon(np_poly))
     p = PatchCollection(
         polygons,
@@ -203,32 +215,29 @@ def draw_masks(ax, img, masks, color=None, with_edge=True, alpha=0.8):
     return ax, img
 
 
-def imshow_det_bboxes(img,
-                      bboxes=None,
+def imshow_det_lines(img,
+                      lines=None,
                       labels=None,
-                      segms=None,
                       class_names=None,
                       score_thr=0,
-                      bbox_color='green',
+                      line_color='green',
                       text_color='green',
-                      mask_color=None,
                       thickness=2,
                       font_size=8,
                       win_name='',
                       show=True,
                       wait_time=0,
                       out_file=None):
-    """Draw bboxes and class labels (with scores) on an image.
+    """Draw lines and class labels (with scores) on an image.
 
     Args:
         img (str | ndarray): The image to be displayed.
-        bboxes (ndarray): Bounding boxes (with scores), shaped (n, 4) or
-            (n, 5).
-        labels (ndarray): Labels of bboxes.
-        segms (ndarray | None): Masks, shaped (n,h,w) or None.
+        lines (ndarray): Bounding boxes (with scores), shaped (n, 72) or
+            (n, 73).
+        labels (ndarray): Labels of lines.
         class_names (list[str]): Names of each classes.
         score_thr (float): Minimum score of bboxes to be shown. Default: 0.
-        bbox_color (list[tuple] | tuple | str | None): Colors of bbox lines.
+        line_color (list[tuple] | tuple | str | None): Colors of bbox lines.
            If a single color is given, it will be applied to all classes.
            The tuple of color should be in RGB order. Default: 'green'.
         text_color (list[tuple] | tuple | str | None): Colors of texts.
@@ -249,29 +258,24 @@ def imshow_det_bboxes(img,
     Returns:
         ndarray: The image with bboxes drawn on it.
     """
-    assert bboxes is None or bboxes.ndim == 2, \
-        f' bboxes ndim should be 2, but its ndim is {bboxes.ndim}.'
+    assert lines is None or lines.ndim == 2, \
+        f' bboxes ndim should be 2, but its ndim is {lines.ndim}.'
     assert labels.ndim == 1, \
         f' labels ndim should be 1, but its ndim is {labels.ndim}.'
-    assert bboxes is None or bboxes.shape[1] == 4 or bboxes.shape[1] == 5, \
-        f' bboxes.shape[1] should be 4 or 5, but its {bboxes.shape[1]}.'
-    assert bboxes is None or bboxes.shape[0] <= labels.shape[0], \
+    assert lines is None or lines.shape[1] == 74 or lines.shape[1] == 75, \
+        f' bboxes.shape[1] should be 72 or 73, but its {lines.shape[1]}.'
+    assert lines is None or lines.shape[0] <= labels.shape[0], \
         'labels.shape[0] should not be less than bboxes.shape[0].'
-    assert segms is None or segms.shape[0] == labels.shape[0], \
-        'segms.shape[0] and labels.shape[0] should have the same length.'
-    assert segms is not None or bboxes is not None, \
-        'segms and bboxes should not be None at the same time.'
 
     img = mmcv.imread(img).astype(np.uint8)
-
+    score_in_line = True if lines.shape[1] == 73 else False
     if score_thr > 0:
-        assert bboxes is not None and bboxes.shape[1] == 5
-        scores = bboxes[:, -1]
+        assert lines is not None and lines.shape[1] == 73
+
+        scores = lines[:, -1]
         inds = scores > score_thr
-        bboxes = bboxes[inds, :]
+        lines = lines[inds, :]    # lines.shape[num_line_thr, num_points+1]
         labels = labels[inds]
-        if segms is not None:
-            segms = segms[inds, ...]
 
     img = mmcv.bgr2rgb(img)
     width, height = img.shape[1], img.shape[0]
@@ -294,57 +298,28 @@ def imshow_det_bboxes(img,
     text_palette = palette_val(get_palette(text_color, max_label + 1))
     text_colors = [text_palette[label] for label in labels]
 
-    num_bboxes = 0
-    if bboxes is not None:
-        num_bboxes = bboxes.shape[0]
-        bbox_palette = palette_val(get_palette(bbox_color, max_label + 1))
-        colors = [bbox_palette[label] for label in labels[:num_bboxes]]
-        draw_bboxes(ax, bboxes, colors, alpha=0.8, thickness=thickness)
-
+    num_lines = 0
+    if lines is not None:
+        num_lines = lines.shape[0]
+        bbox_palette = palette_val(get_palette(line_color, max_label + 1))
+        colors = [bbox_palette[label] for label in labels[:num_lines]]
         horizontal_alignment = 'left'
-        positions = bboxes[:, :2].astype(np.int32) + thickness
-        areas = (bboxes[:, 3] - bboxes[:, 1]) * (bboxes[:, 2] - bboxes[:, 0])
-        scales = _get_adaptive_scales(areas)
-        scores = bboxes[:, 4] if bboxes.shape[1] == 5 else None
+        if score_in_line:
+            draw_lines(ax, lines[:, :-1], colors, alpha=0.8, thickness=thickness)
+            positions = get_label_positions(lines[:, :-1]).astype(np.int32) + thickness
+        else:
+            draw_lines(ax, lines[:, ], colors, alpha=0.8, thickness=thickness)
+            positions = get_label_positions(lines).astype(np.int32) + thickness
+        scores = lines[:, 4] if score_in_line else None
         draw_labels(
             ax,
-            labels[:num_bboxes],
+            labels[:num_lines],
             positions,
             scores=scores,
             class_names=class_names,
             color=text_colors,
             font_size=font_size,
-            scales=scales,
             horizontal_alignment=horizontal_alignment)
-
-    if segms is not None:
-        mask_palette = get_palette(mask_color, max_label + 1)
-        colors = [mask_palette[label] for label in labels]
-        colors = np.array(colors, dtype=np.uint8)
-        draw_masks(ax, img, segms, colors, with_edge=True)
-
-        if num_bboxes < segms.shape[0]:
-            segms = segms[num_bboxes:]
-            horizontal_alignment = 'center'
-            areas = []
-            positions = []
-            for mask in segms:
-                _, _, stats, centroids = cv2.connectedComponentsWithStats(
-                    mask.astype(np.uint8), connectivity=8)
-                largest_id = np.argmax(stats[1:, -1]) + 1
-                positions.append(centroids[largest_id])
-                areas.append(stats[largest_id, -1])
-            areas = np.stack(areas, axis=0)
-            scales = _get_adaptive_scales(areas)
-            draw_labels(
-                ax,
-                labels[num_bboxes:],
-                positions,
-                class_names=class_names,
-                color=text_colors,
-                font_size=font_size,
-                scales=scales,
-                horizontal_alignment=horizontal_alignment)
 
     plt.imshow(img)
 
@@ -373,51 +348,42 @@ def imshow_det_bboxes(img,
     return img
 
 
-def imshow_gt_det_bboxes(img,
-                         annotation,
-                         result,
-                         class_names=None,
-                         score_thr=0,
-                         gt_bbox_color=(61, 102, 255),
-                         gt_text_color=(200, 200, 200),
-                         gt_mask_color=(61, 102, 255),
-                         det_bbox_color=(241, 101, 72),
-                         det_text_color=(200, 200, 200),
-                         det_mask_color=(241, 101, 72),
-                         thickness=2,
-                         font_size=13,
-                         win_name='',
-                         show=True,
-                         wait_time=0,
-                         out_file=None):
+def imshow_gt_det_lines(img,
+                        annotation,
+                        result,
+                        class_names=None,
+                        score_thr=0,
+                        gt_line_color=(61, 102, 255),
+                        gt_text_color=(200, 200, 200),
+                        det_line_color=(241, 101, 72),
+                        det_text_color=(200, 200, 200),
+                        thickness=2,
+                        font_size=13,
+                        win_name='',
+                        show=True,
+                        wait_time=0,
+                        out_file=None):
     """General visualization GT and result function.
 
     Args:
       img (str | ndarray): The image to be displayed.
       annotation (dict): Ground truth annotations where contain keys of
-          'gt_bboxes' and 'gt_labels' or 'gt_masks'.
-      result (tuple[list] | list): The detection result, can be either
-          (bbox, segm) or just bbox.
+          'gt_lines' and 'gt_labels' or 'gt_masks'.
+      result (tuple[list] | list): The detection line result.
       class_names (list[str]): Names of each classes.
-      score_thr (float): Minimum score of bboxes to be shown. Default: 0.
-      gt_bbox_color (list[tuple] | tuple | str | None): Colors of bbox lines.
+      score_thr (float): Minimum score of lines to be shown. Default: 0.
+      gt_line_color (list[tuple] | tuple | str | None): Colors of gt_lines.
           If a single color is given, it will be applied to all classes.
           The tuple of color should be in RGB order. Default: (61, 102, 255).
       gt_text_color (list[tuple] | tuple | str | None): Colors of texts.
           If a single color is given, it will be applied to all classes.
           The tuple of color should be in RGB order. Default: (200, 200, 200).
-      gt_mask_color (list[tuple] | tuple | str | None, optional): Colors of
-          masks. If a single color is given, it will be applied to all classes.
-          The tuple of color should be in RGB order. Default: (61, 102, 255).
-      det_bbox_color (list[tuple] | tuple | str | None):Colors of bbox lines.
+      det_line_color (list[tuple] | tuple | str | None):Colors of bbox lines.
           If a single color is given, it will be applied to all classes.
           The tuple of color should be in RGB order. Default: (241, 101, 72).
       det_text_color (list[tuple] | tuple | str | None):Colors of texts.
           If a single color is given, it will be applied to all classes.
           The tuple of color should be in RGB order. Default: (200, 200, 200).
-      det_mask_color (list[tuple] | tuple | str | None, optional): Color of
-          masks. If a single color is given, it will be applied to all classes.
-          The tuple of color should be in RGB order. Default: (241, 101, 72).
       thickness (int): Thickness of lines. Default: 2.
       font_size (int): Font size of texts. Default: 13.
       win_name (str): The window name. Default: ''.
@@ -429,92 +395,56 @@ def imshow_gt_det_bboxes(img,
     Returns:
         ndarray: The image with bboxes or masks drawn on it.
     """
-    assert 'gt_bboxes' in annotation
+    assert 'gt_lines' in annotation
     assert 'gt_labels' in annotation
     assert isinstance(result, (tuple, list, dict)), 'Expected ' \
         f'tuple or list or dict, but get {type(result)}'
 
-    gt_bboxes = annotation['gt_bboxes']
+    gt_lines = annotation['gt_lines']
     gt_labels = annotation['gt_labels']
-    gt_masks = annotation.get('gt_masks', None)
-    if gt_masks is not None:
-        gt_masks = mask2ndarray(gt_masks)
-
-    gt_seg = annotation.get('gt_semantic_seg', None)
-    if gt_seg is not None:
-        pad_value = 255  # the padding value of gt_seg
-        sem_labels = np.unique(gt_seg)
-        all_labels = np.concatenate((gt_labels, sem_labels), axis=0)
-        all_labels, counts = np.unique(all_labels, return_counts=True)
-        stuff_labels = all_labels[np.logical_and(counts < 2,
-                                                 all_labels != pad_value)]
-        stuff_masks = gt_seg[None] == stuff_labels[:, None, None]
-        gt_labels = np.concatenate((gt_labels, stuff_labels), axis=0)
-        gt_masks = np.concatenate((gt_masks, stuff_masks.astype(np.uint8)),
-                                  axis=0)
-        # If you need to show the bounding boxes,
-        # please comment the following line
-        # gt_bboxes = None
 
     img = mmcv.imread(img)
 
-    img = imshow_det_bboxes(
+    img = imshow_det_lines(
         img,
-        gt_bboxes,
+        gt_lines,
         gt_labels,
-        gt_masks,
         class_names=class_names,
-        bbox_color=gt_bbox_color,
+        bbox_color=gt_line_color,
         text_color=gt_text_color,
-        mask_color=gt_mask_color,
         thickness=thickness,
         font_size=font_size,
         win_name=win_name,
         show=False)
 
     if not isinstance(result, dict):
-        if isinstance(result, tuple):
-            bbox_result, segm_result = result
-            if isinstance(segm_result, tuple):
-                segm_result = segm_result[0]  # ms rcnn
-        else:
-            bbox_result, segm_result = result, None
-
-        bboxes = np.vstack(bbox_result)
+        lines_result = result['pred_lines']
         labels = [
-            np.full(bbox.shape[0], i, dtype=np.int32)
-            for i, bbox in enumerate(bbox_result)
+            np.full(line.shape[0], i, dtype=np.int32)
+            for i, line in enumerate(lines_result)
         ]
         labels = np.concatenate(labels)
 
-        segms = None
-        if segm_result is not None and len(labels) > 0:  # non empty
-            segms = mmcv.concat_list(segm_result)
-            segms = mask_util.decode(segms)
-            segms = segms.transpose(2, 0, 1)
     else:
         assert class_names is not None, 'We need to know the number ' \
                                         'of classes.'
         VOID = len(class_names)
-        bboxes = None
+        lines = None
         pan_results = result['pan_results']
         # keep objects ahead
         ids = np.unique(pan_results)[::-1]
         legal_indices = ids != VOID
         ids = ids[legal_indices]
-        labels = np.array([id % INSTANCE_OFFSET for id in ids], dtype=np.int64)
-        segms = (pan_results[None] == ids[:, None, None])
+        labels = np.array([id % 1000 for id in ids], dtype=np.int64)
 
-    img = imshow_det_bboxes(
+    img = imshow_det_lines(
         img,
-        bboxes,
+        lines,
         labels,
-        segms=segms,
         class_names=class_names,
         score_thr=score_thr,
-        bbox_color=det_bbox_color,
+        line_color=det_line_color,
         text_color=det_text_color,
-        mask_color=det_mask_color,
         thickness=thickness,
         font_size=font_size,
         win_name=win_name,

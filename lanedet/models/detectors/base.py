@@ -8,7 +8,7 @@ import torch
 import torch.distributed as dist
 from mmcv.runner import BaseModule, auto_fp16
 
-from mmdet.core.visualization import imshow_det_bboxes
+from lanedet.core.visualization import imshow_det_lines
 
 
 class BaseDetector(BaseModule, metaclass=ABCMeta):
@@ -335,7 +335,7 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
         if out_file is not None:
             show = False
         # draw bounding boxes
-        img = imshow_det_bboxes(
+        img = imshow_det_lines(
             img,
             bboxes,
             labels,

@@ -77,17 +77,25 @@ def line_overlaps(lines1, lines2,  length=1e-5, is_aligned=False, eps=1e-6):
     assert lines1.shape[:-2] == lines2.shape[:-2]
     num_lines1 = lines1.size(-2)
     num_lines2 = lines1.size(-2)
-    if is_aligned:
-        assert num_lines1 == num_lines2
-
     px1 = lines1 - length
     px2 = lines1 + length
     tx1 = lines2 - length
     tx2 = lines2 + length
-    overlap = torch.min(px2[..., None, :, :], tx2[..., :, None, :]) - torch.max(px1[..., None, :, :], tx1[..., :, None, :])
-    union = torch.max(px2[..., None, :, :], tx2[..., :, None, :]) - torch.min(px1[..., None, :, :], tx1[..., :, None, :])
-    # overlap, union shape:[batch, n, m, num_points]
-    eps = union.new_tensor([eps])
-    union = torch.max(union, eps)
-    line_iou = 1 - (overlap / union).sum(dim=-1)
-    return line_iou
+
+    if is_aligned:
+        assert num_lines1 == num_lines2
+        overlap = torch.min(px2, tx2) - torch.max(px1, tx1)
+        union = torch.max(px2, tx2) - torch.min(px1, tx1)
+        # overlap, union shape:[batch, m, num_points]
+        eps = union.new_tensor([eps])
+        union = torch.max(union, eps)
+        line_iou = 1 - (overlap / union).sum(dim=-1)
+        return line_iou
+    else:
+        overlap = torch.min(px2[..., :, None, :], tx2[..., None, :, :]) - torch.max(px1[..., :, None, :], tx1[..., None, :, :])
+        union = torch.max(px2[..., :, None, :], tx2[..., None, :, :]) - torch.min(px1[..., :, None, :], tx1[..., None, :, :])
+        # overlap, union shape:[batch, m, n, num_points]
+        eps = union.new_tensor([eps])
+        union = torch.max(union, eps)
+        line_iou = 1 - (overlap / union).sum(dim=-1)
+        return line_iou
