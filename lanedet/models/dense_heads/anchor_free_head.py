@@ -7,7 +7,7 @@ import torch.nn as nn
 from mmcv.cnn import ConvModule
 from mmcv.runner import force_fp32
 
-from lanedet.core import multi_apply
+from lanedet.core import build_bbox_coder, multi_apply
 from ..builder import HEADS, build_loss
 from .base_dense_head import BaseDenseHead
 from .dense_test_mixins import BBoxTestMixin
@@ -88,13 +88,6 @@ class AnchorFreeHead(BaseDenseHead, BBoxTestMixin):
         self.loss_cls = build_loss(loss_cls)
         self.loss_bbox = build_loss(loss_bbox)
         self.bbox_coder = build_bbox_coder(bbox_coder)
-
-        self.prior_generator = MlvlPointGenerator(strides)
-
-        # In order to keep a more general interface and be consistent with
-        # anchor_head. We can think of point like one anchor
-        self.num_base_priors = self.prior_generator.num_base_priors[0]
-
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
         self.conv_cfg = conv_cfg

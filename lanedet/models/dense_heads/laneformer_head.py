@@ -7,20 +7,34 @@ import torch.nn.functional as F
 from mmcv.cnn import Conv2d, Linear, build_activation_layer
 from mmcv.cnn.bricks.transformer import FFN, build_positional_encoding
 from mmcv.runner import force_fp32
-
+from lanedet.models.utils import build_transformer
 from lanedet.core import (build_assigner, build_sampler, multi_apply,
                         reduce_mean)
 from ..builder import HEADS, build_loss
-from .detr_head import DETRHead
+from .anchor_free_head import AnchorFreeHead
 
 
 @HEADS.register_module()
-class LaneFormerHead(DETRHead):
+class LaneFormerHead(AnchorFreeHead):
     def __init__(self,
-                 *args,
-                 num_points=72,
+                 num_classes,
+                 in_channels,
+                 num_points=74,
+                 num_query=100,
+                 num_reg_fcs=2,
+                 transformer=None,
+                 sync_cls_avg_factor=False,
+                 positional_encoding=dict(
+                     type='SinePositionalEncoding',
+                     num_feats=128,
+                     normalize=True),
+                 loss_cls=dict(
+                     type='CrossEntropyLoss',
+                     bg_cls_weight=0.1,
+                     use_sigmoid=False,
+                     loss_weight=1.0),
                  loss_line=dict(type='L1Loss', loss_weight=5.0),
-                 loss_iou=dict(type='LineIoULoss', loss_weight=2.0),
+                 loss_iou=dict(type='LineIoULoss', loss_weight=2.0, length=1e-4),
                  train_cfg=dict(
                      assigner=dict(
                          type='HungarianAssigner',
@@ -28,14 +42,80 @@ class LaneFormerHead(DETRHead):
                          reg_cost=dict(type='LineL1Cost', weight=5.0),
                          iou_cost=dict(
                              type='LineIoUCost', weight=2.0))),
-                 transformer=None,
+                 test_cfg=dict(max_per_img=100),
+                 init_cfg=None,
                  **kwargs):
+        # NOTE here use `AnchorFreeHead` instead of `TransformerHead`,
+        # since it brings inconvenience when the initialization of
+        # `AnchorFreeHead` is called.
+        super(AnchorFreeHead, self).__init__(init_cfg)
+        self.bg_cls_weight = 0
+        self.sync_cls_avg_factor = sync_cls_avg_factor
+        class_weight = loss_cls.get('class_weight', None)
+        if class_weight is not None and (self.__class__ is LaneFormerHead):
+            assert isinstance(class_weight, float), 'Expected ' \
+                'class_weight to have type float. Found ' \
+                f'{type(class_weight)}.'
+            # NOTE following the official DETR rep0, bg_cls_weight means
+            # relative classification weight of the no-object class.
+            bg_cls_weight = loss_cls.get('bg_cls_weight', class_weight)
+            assert isinstance(bg_cls_weight, float), 'Expected ' \
+                'bg_cls_weight to have type float. Found ' \
+                f'{type(bg_cls_weight)}.'
+            class_weight = torch.ones(num_classes + 1) * class_weight
+            # set background class as the last indice
+            class_weight[num_classes] = bg_cls_weight
+            loss_cls.update({'class_weight': class_weight})
+            if 'bg_cls_weight' in loss_cls:
+                loss_cls.pop('bg_cls_weight')
+            self.bg_cls_weight = bg_cls_weight
+
+        if train_cfg:
+            assert 'assigner' in train_cfg, 'assigner should be provided '\
+                'when train_cfg is set.'
+            assigner = train_cfg['assigner']
+            assert loss_cls['loss_weight'] == assigner['cls_cost']['weight'], \
+                'The classification weight for loss and matcher should be' \
+                'exactly the same.'
+            assert loss_line['loss_weight'] == assigner['reg_cost'][
+                'weight'], 'The regression L1 weight for loss and matcher ' \
+                'should be exactly the same.'
+            assert loss_iou['loss_weight'] == assigner['iou_cost']['weight'], \
+                'The regression iou weight for loss and matcher should be' \
+                'exactly the same.'
+            self.assigner = build_assigner(assigner)
+            # DETR sampling=False, so use PseudoSampler
+            sampler_cfg = dict(type='PseudoSampler')
+            self.sampler = build_sampler(sampler_cfg, context=self)
         self.num_points = num_points
-        super(LaneFormerHead, self).__init__(*args, transformer=transformer, **kwargs)
-        assigner = train_cfg['assigner']
-        self.assigner = build_assigner(assigner)
+        self.num_query = num_query
+        self.num_classes = num_classes
+        self.in_channels = in_channels
+        self.num_reg_fcs = num_reg_fcs
+        self.train_cfg = train_cfg
+        self.test_cfg = test_cfg
+        self.fp16_enabled = False
+        self.loss_cls = build_loss(loss_cls)
         self.loss_line = build_loss(loss_line)
         self.loss_iou = build_loss(loss_iou)
+
+        if self.loss_cls.use_sigmoid:
+            self.cls_out_channels = num_classes
+        else:
+            self.cls_out_channels = num_classes + 1
+        self.act_cfg = transformer.get('act_cfg',
+                                       dict(type='ReLU', inplace=True))
+        self.activate = build_activation_layer(self.act_cfg)
+        self.positional_encoding = build_positional_encoding(
+            positional_encoding)
+        self.transformer = build_transformer(transformer)
+        self.embed_dims = self.transformer.embed_dims
+        assert 'num_feats' in positional_encoding
+        num_feats = positional_encoding['num_feats']
+        assert num_feats * 2 == self.embed_dims, 'embed_dims should' \
+            f' be exactly 2 times of num_feats. Found {self.embed_dims}' \
+            f' and {num_feats}.'
+        self._init_layers()
 
     # overwrite layer initialize
     def _init_layers(self):
@@ -52,6 +132,30 @@ class LaneFormerHead(DETRHead):
             add_residual=False)
         self.fc_reg = Linear(self.embed_dims, self.num_points)
         self.query_embedding = nn.Embedding(self.num_query, self.embed_dims)
+
+    def forward(self, feats, img_metas):
+        """Forward function.
+
+        Args:
+            feats (tuple[Tensor]): Features from the upstream network, each is
+                a 4D-tensor.
+            img_metas (list[dict]): List of image information.
+
+        Returns:
+            tuple[list[Tensor], list[Tensor]]: Outputs for all scale levels.
+
+                - all_cls_scores_list (list[Tensor]): Classification scores \
+                    for each scale level. Each is a 4D-tensor with shape \
+                    [nb_dec, bs, num_query, cls_out_channels]. Note \
+                    `cls_out_channels` should includes background.
+                - all_bbox_preds_list (list[Tensor]): Sigmoid regression \
+                    outputs for each scale level. Each is a 4D-tensor with \
+                    normalized coordinate format (cx, cy, w, h) and shape \
+                    [nb_dec, bs, num_query, 4].
+        """
+        num_levels = len(feats)
+        img_metas_list = [img_metas for _ in range(num_levels)]
+        return multi_apply(self.forward_single, feats, img_metas_list)
 
     def forward_single(self, x, img_metas):
         """"Forward function for a single feature level.
@@ -93,6 +197,41 @@ class LaneFormerHead(DETRHead):
         all_line_preds = self.fc_reg(self.activate(
             self.reg_ffn(outs_dec))).sigmoid()
         return all_cls_scores, all_line_preds
+
+    def forward_train(self,
+                      x,
+                      img_metas,
+                      gt_lines,
+                      gt_labels=None,
+                      gt_lines_ignore=None,
+                      proposal_cfg=None,
+                      **kwargs):
+        """Forward function for training mode.
+
+        Args:
+            x (list[Tensor]): Features from backbone.
+            img_metas (list[dict]): Meta information of each image, e.g.,
+                image size, scaling factor, etc.
+            gt_lines (Tensor): Ground truth bboxes of the image,
+                shape (num_gts, 72).
+            gt_labels (Tensor): Ground truth labels of each box,
+                shape (num_gts,).
+            gt_lines_ignore (Tensor): Ground truth bboxes to be
+                ignored, shape (num_ignored_gts, 4).
+            proposal_cfg (mmcv.Config): Test / postprocessing configuration,
+                if None, test_cfg would be used.
+
+        Returns:
+            dict[str, Tensor]: A dictionary of loss components.
+        """
+        assert proposal_cfg is None, '"proposal_cfg" must be None'
+        outs = self(x, img_metas)
+        if gt_labels is None:
+            loss_inputs = outs + (gt_lines, img_metas)
+        else:
+            loss_inputs = outs + (gt_lines, gt_labels, img_metas)
+        losses = self.loss(*loss_inputs, gt_lines_ignore=gt_lines_ignore)
+        return losses
 
     @force_fp32(apply_to=('all_cls_scores_list', 'all_line_preds_list'))
     def loss(self,
@@ -218,7 +357,7 @@ class LaneFormerHead(DETRHead):
         # normalization purposes
         num_total_pos = loss_cls.new_tensor([num_total_pos])
         num_total_pos = torch.clamp(reduce_mean(num_total_pos), min=1).item()
-
+        print('line_targets.max():', line_targets.max())
         # regression IoU loss
         line_preds = line_preds.reshape(-1, self.num_points)
         loss_iou = self.loss_iou(
@@ -346,10 +485,134 @@ class LaneFormerHead(DETRHead):
 
         # laneformer regress the relative position of lines in the image.
         # Thus the learning target should be normalized by the image size
-        factor = img_w
+        factor = torch.full(gt_lines.size(), img_w)
+        factor[:, -2:] = img_h
         pos_gt_lines_targets = sampling_result.pos_gt_bboxes / factor
         line_targets[pos_inds] = pos_gt_lines_targets
         return (labels, label_weights, line_targets, line_weights, pos_inds,
                 neg_inds)
-    
-    
+
+    # equal to get_lines, 修改bboxes为lines 有点麻烦，以后有空再改
+    @force_fp32(apply_to=('all_cls_scores_list', 'all_bbox_preds_list'))
+    def get_bboxes(self,
+                   all_cls_scores_list,
+                   all_lines_preds_list,
+                   img_metas,
+                   rescale=False):
+        """Transform network outputs for a batch into bbox predictions.
+
+        Args:
+            all_cls_scores_list (list[Tensor]): Classification outputs
+                for each feature level. Each is a 4D-tensor with shape
+                [nb_dec, bs, num_query, cls_out_channels].
+            all_lines_preds_list (list[Tensor]): Sigmoid regression
+                outputs for each feature level. Each is a 4D-tensor with
+                normalized coordinate format (x1,x2,...xN, y1,y2) and shape
+                [nb_dec, bs, num_query, num_points].
+            img_metas (list[dict]): Meta information of each image.
+            rescale (bool, optional): If True, return lines in original
+                image space. Default False.
+
+        Returns:
+            list[list[Tensor, Tensor]]: Each item in result_list is 2-tuple. \
+                The first item is an (n, 5) tensor, where the first 4 columns \
+                are bounding box positions (tl_x, tl_y, br_x, br_y) and the \
+                5-th column is a score between 0 and 1. The second item is a \
+                (n,) tensor where each item is the predicted class label of \
+                the corresponding box.
+        """
+        # NOTE defaultly only using outputs from the last feature level,
+        # and only the outputs from the last decoder layer is used.
+        cls_scores = all_cls_scores_list[-1][-1]
+        lines_preds = all_lines_preds_list[-1][-1]
+
+        result_list = []
+        for img_id in range(len(img_metas)):
+            cls_score = cls_scores[img_id]
+            bbox_pred = lines_preds[img_id]
+            img_shape = img_metas[img_id]['img_shape']
+            scale_factor = img_metas[img_id]['scale_factor']
+            proposals = self._get_bboxes_single(cls_score, bbox_pred,
+                                                img_shape, scale_factor,
+                                                rescale)
+            result_list.append(proposals)
+
+        return result_list
+
+    def _get_bboxes_single(self,
+                           cls_score,
+                           bbox_pred,
+                           img_shape,
+                           scale_factor,
+                           rescale=False):
+        """Transform outputs from the last decoder layer into bbox predictions
+        for each image.
+
+        Args:
+            cls_score (Tensor): Box score logits from the last decoder layer
+                for each image. Shape [num_query, cls_out_channels].
+            bbox_pred (Tensor): Sigmoid outputs from the last decoder layer
+                for each image, with coordinate format (x1,x2,...xN,y1,y2) and
+                shape [num_query, num_points].
+            img_shape (tuple[int]): Shape of input image, (height, width, 3).
+            scale_factor (ndarray, optional): Scale factor of the image arange
+                as (w_scale, h_scale, w_scale, h_scale).
+            rescale (bool, optional): If True, return boxes in original image
+                space. Default False.
+
+        Returns:
+            tuple[Tensor]: Results of detected bboxes and labels.
+
+                - det_bboxes: Predicted bboxes with shape [num_query, 5], \
+                    where the first 4 columns are bounding box positions \
+                    (tl_x, tl_y, br_x, br_y) and the 5-th column are scores \
+                    between 0 and 1.
+                - det_labels: Predicted labels of the corresponding box with \
+                    shape [num_query].
+        """
+        assert len(cls_score) == len(bbox_pred)
+        max_per_img = self.test_cfg.get('max_per_img', self.num_query)
+        # exclude background
+        if self.loss_cls.use_sigmoid:
+            cls_score = cls_score.sigmoid()
+            scores, indexes = cls_score.view(-1).topk(max_per_img)
+            det_labels = indexes % self.num_classes
+            bbox_index = indexes // self.num_classes
+            bbox_pred = bbox_pred[bbox_index]
+        else:
+            scores, det_labels = F.softmax(cls_score, dim=-1)[..., :-1].max(-1)
+            scores, bbox_index = scores.topk(max_per_img)
+            bbox_pred = bbox_pred[bbox_index]
+            det_labels = det_labels[bbox_index]
+        det_bboxes = bbox_pred
+        det_bboxes[:, :-2] = det_bboxes[:, :-2] * img_shape[1]
+        det_bboxes[:, -2:] = det_bboxes[:, -2:] * img_shape[0]
+        det_bboxes[:, :-2].clamp_(min=0, max=img_shape[1])
+        det_bboxes[:, -2:].clamp_(min=0, max=img_shape[0])
+        if rescale:
+            det_bboxes /= det_bboxes.new_tensor(scale_factor)
+        det_bboxes = torch.cat((det_bboxes, scores.unsqueeze(1)), -1)
+
+        return det_bboxes, det_labels
+
+    def simple_test_bboxes(self, feats, img_metas, rescale=False):
+        """Test det bboxes without test-time augmentation.
+
+        Args:
+            feats (tuple[torch.Tensor]): Multi-level features from the
+                upstream network, each is a 4D-tensor.
+            img_metas (list[dict]): List of image information.
+            rescale (bool, optional): Whether to rescale the results.
+                Defaults to False.
+
+        Returns:
+            list[tuple[Tensor, Tensor]]: Each item in result_list is 2-tuple.
+                The first item is ``bboxes`` with shape (n, 5),
+                where 5 represent (tl_x, tl_y, br_x, br_y, score).
+                The shape of the second tensor in the tuple is ``labels``
+                with shape (n,)
+        """
+        # forward of this head requires img_metas
+        outs = self.forward(feats, img_metas)
+        results_list = self.get_bboxes(*outs, img_metas, rescale=rescale)
+        return results_list

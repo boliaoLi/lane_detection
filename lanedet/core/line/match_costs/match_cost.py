@@ -14,14 +14,14 @@ class LineL1Cost:
          weight (int | float, optional): loss_weight
          num_points (int): number of points to defint a line, default = 72
     """
-    def __init__(self, weight=1., num_points=72):
+    def __init__(self, weight=1., num_points=74):
         self.weight = weight
         self.num_points = num_points
 
     def __call__(self, line_pred, gt_lines):
         """
         Args:
-            line_pred (Tensor): Predicted boxes with normalized coordinates
+            line_pred (Tensor): Predicted line with normalized coordinates
                 (x1,x2,...,xN), N= num_points, which are all in range [0, 1]. Shape
                 (num_query, num_points).
             gt_lines (Tensor): Ground truth boxes with normalized
@@ -29,6 +29,7 @@ class LineL1Cost:
         Returns:
             torch.Tensor: bbox_cost value with weight
         """
+
         line_cost = torch.cdist(line_pred, gt_lines, p=1)
         return line_cost * self.weight
 

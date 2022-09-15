@@ -141,6 +141,6 @@ class L1Loss(nn.Module):
         assert reduction_override in (None, 'none', 'mean', 'sum')
         reduction = (
             reduction_override if reduction_override else self.reduction)
-        loss_bbox = self.loss_weight * l1_loss(
-            pred, target, weight, reduction=reduction, avg_factor=avg_factor)
-        return loss_bbox
+        loss_line = self.loss_weight * l1_loss(
+            pred, target, weight=weight, reduction=reduction, avg_factor=avg_factor)
+        return loss_line

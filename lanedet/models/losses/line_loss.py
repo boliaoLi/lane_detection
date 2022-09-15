@@ -13,7 +13,7 @@ from lanedet.core.line.iou_calculators.iou_line_calculator import line_overlaps
 
 @mmcv.jit(derivate=True, coderize=True)
 @weighted_loss
-def line_iou_loss(pred, target, length=15, aligned=True):
+def line_iou_loss(pred, target, length=1e-3, aligned=True):
     """Line IoU loss.
 
     Computing the Line IoU loss between a set of predicted lines and target lines.
@@ -23,15 +23,12 @@ def line_iou_loss(pred, target, length=15, aligned=True):
         pred (torch.Tensor): Predicted bboxes of format (x1, x2, ..., x72),
             shape (n, 72).
         target (torch.Tensor): Corresponding gt lines, shape (n, 72).
-
         length: extended radius
         aligned: True for iou loss calculation, False for pair-wise ious in assign
     Return:
         torch.Tensor: Loss tensor.
     """
-    iou = line_overlaps(pred, target, length, is_aligned=aligned)
-    loss = iou.mean()
-
+    loss = line_overlaps(pred, target, length, is_aligned=aligned)
     return loss
 
 
@@ -46,13 +43,15 @@ class LineIoULoss(nn.Module):
 
     """
 
-    def __init__(self, loss_weight=1.0):
+    def __init__(self, loss_weight=1.0, length=1e-2):
         super(LineIoULoss, self).__init__()
         self.loss_weight = loss_weight
+        self.length = length
 
     def forward(self,
                 pred,
                 target,
+                weight,
                 avg_factor=True,
                 aligned=True
                 ):
@@ -61,7 +60,6 @@ class LineIoULoss(nn.Module):
         Args:
             pred (torch.Tensor): Predicted bboxes of format (x1, x2, ..., x72),shape (n, 72).
             target (torch.Tensor): Corresponding gt lines, shape (n, 72).
-            img_w: image width
             length: extended radius
             avg_factor (int, optional): Average factor that is used to average
                 the loss. Defaults to True.
@@ -71,8 +69,10 @@ class LineIoULoss(nn.Module):
         loss = self.loss_weight * line_iou_loss(
             pred,
             target,
-            length=15,
-            aligned=True
+            weight=weight,
+            length=self.length,
+            aligned=True,
+            avg_factor=avg_factor
             )
         return loss
 

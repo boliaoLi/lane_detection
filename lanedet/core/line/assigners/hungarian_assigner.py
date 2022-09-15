@@ -115,8 +115,8 @@ class HungarianAssigner(BaseAssigner):
         # classification and linecost.
         cls_cost = self.cls_cost(cls_pred, gt_labels)
         # regression L1 cost
-        normalize_gt_bboxes = gt_lines / factor
-        reg_cost = self.reg_cost(line_pred, normalize_gt_bboxes)
+        normalize_gt_lines = gt_lines / factor
+        reg_cost = self.reg_cost(line_pred, normalize_gt_lines)
         # regression iou cost, defaultly LineIou is used in laneformer.
         lines = line_pred * factor
         iou_cost = self.iou_cost(lines, gt_lines)

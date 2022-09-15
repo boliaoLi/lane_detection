@@ -60,7 +60,15 @@ def model_init():
                 use_sigmoid=False,
                 loss_weight=1.0),
             loss_line=dict(type='L1Loss', loss_weight=5.0),
-            loss_iou=dict(type='LineIoULoss', loss_weight=2.0)))
+            loss_iou=dict(type='LineIoULoss', loss_weight=2.0)),
+        train_cfg=dict(
+            assigner=dict(
+                type='HungarianAssigner',
+                cls_cost=dict(type='ClassificationCost', weight=1.),
+                reg_cost=dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
+                iou_cost=dict(type='IoUCost', iou_mode='giou', weight=2.0))),
+        test_cfg=dict(max_per_img=100)
+    )
     s = 256
     img_metas = [{
         'img_shape': (s, s, 3),

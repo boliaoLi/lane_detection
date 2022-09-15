@@ -23,25 +23,6 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
         """bool: whether the detector has a neck"""
         return hasattr(self, 'neck') and self.neck is not None
 
-    # TODO: these properties need to be carefully handled
-    # for both single stage & two stage detectors
-    @property
-    def with_shared_head(self):
-        """bool: whether the detector has a shared head in the RoI Head"""
-        return hasattr(self, 'roi_head') and self.roi_head.with_shared_head
-
-    @property
-    def with_bbox(self):
-        """bool: whether the detector has a bbox head"""
-        return ((hasattr(self, 'roi_head') and self.roi_head.with_bbox)
-                or (hasattr(self, 'bbox_head') and self.bbox_head is not None))
-
-    @property
-    def with_mask(self):
-        """bool: whether the detector has a mask head"""
-        return ((hasattr(self, 'roi_head') and self.roi_head.with_mask)
-                or (hasattr(self, 'mask_head') and self.mask_head is not None))
-
     @abstractmethod
     def extract_feat(self, imgs):
         """Extract features from images."""
@@ -272,9 +253,8 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
                     img,
                     result,
                     score_thr=0.3,
-                    bbox_color=(72, 101, 241),
+                    line_color=(72, 101, 241),
                     text_color=(72, 101, 241),
-                    mask_color=None,
                     thickness=2,
                     font_size=13,
                     win_name='',
@@ -285,17 +265,14 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
 
         Args:
             img (str or Tensor): The image to be displayed.
-            result (Tensor or tuple): The results to draw over `img`
-                bbox_result or (bbox_result, segm_result).
+            result(list[Tensor]): the results to draw over 'img', format should be (line_preds, labels)
+            line_preds.shape=[num_lines, 72+1], labels.shape[num_lines].
             score_thr (float, optional): Minimum score of bboxes to be shown.
                 Default: 0.3.
-            bbox_color (str or tuple(int) or :obj:`Color`):Color of bbox lines.
-               The tuple of color should be in BGR order. Default: 'green'
+            line_color (str or tuple(int) or :obj:`Color`):Color of bbox lines.
+               The tuple of color should be in BGR order. Default: (72, 101, 241)
             text_color (str or tuple(int) or :obj:`Color`):Color of texts.
-               The tuple of color should be in BGR order. Default: 'green'
-            mask_color (None or str or tuple(int) or :obj:`Color`):
-               Color of masks. The tuple of color should be in BGR order.
-               Default: None
+               The tuple of color should be in BGR order. Default: (72, 101, 241)
             thickness (int): Thickness of lines. Default: 2
             font_size (int): Font size of texts. Default: 13
             win_name (str): The window name. Default: ''
@@ -311,40 +288,23 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
         """
         img = mmcv.imread(img)
         img = img.copy()
-        if isinstance(result, tuple):
-            bbox_result, segm_result = result
-            if isinstance(segm_result, tuple):
-                segm_result = segm_result[0]  # ms rcnn
-        else:
-            bbox_result, segm_result = result, None
-        bboxes = np.vstack(bbox_result)
-        labels = [
-            np.full(bbox.shape[0], i, dtype=np.int32)
-            for i, bbox in enumerate(bbox_result)
-        ]
-        labels = np.concatenate(labels)
-        # draw segmentation masks
-        segms = None
-        if segm_result is not None and len(labels) > 0:  # non empty
-            segms = mmcv.concat_list(segm_result)
-            if isinstance(segms[0], torch.Tensor):
-                segms = torch.stack(segms, dim=0).detach().cpu().numpy()
-            else:
-                segms = np.stack(segms, axis=0)
+        pred_lines, pred_labels = result
+        pred_lines = pred_lines[..., :-1]
+        pred_scores = pred_lines[..., -1]
         # if out_file specified, do not show image in window
         if out_file is not None:
             show = False
-        # draw bounding boxes
+
+        # draw lines
         img = imshow_det_lines(
             img,
-            bboxes,
-            labels,
-            segms,
+            pred_lines,
+            pred_labels,
+            pred_scores,
             class_names=self.CLASSES,
             score_thr=score_thr,
-            bbox_color=bbox_color,
+            line_color=line_color,
             text_color=text_color,
-            mask_color=mask_color,
             thickness=thickness,
             font_size=font_size,
             win_name=win_name,

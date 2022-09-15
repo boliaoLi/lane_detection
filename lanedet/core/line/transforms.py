@@ -3,6 +3,25 @@ import numpy as np
 import torch
 
 
+def line2result(lines, labels, num_classes):
+    """Convert detection results to a list of numpy arrays.
+
+    Args:
+        lines (torch.Tensor | np.ndarray): shape (n, 73) with format(x1,x2,...xN,y1,y2,score)
+        labels (torch.Tensor | np.ndarray): shape (n, )
+        num_classes (int): class number, including background class
+
+    Returns:
+        list: [lines(ndarray), labels(ndarray)]
+    """
+    assert isinstance(lines, (torch.Tensor, np.ndarray)) and isinstance(labels, (torch.Tensor, np.ndarray)),\
+    "Don't support this format of (lines, labels)"
+
+    lines = lines.detach().numpy() if isinstance(lines, torch.Tensor) else lines
+    labels = labels.detach().numpy() if isinstance(labels, torch.Tensor) else labels
+    return [lines, labels]
+
+
 def find_inside_bboxes(bboxes, img_h, img_w):
     """Find bboxes as long as a part of bboxes is inside the image.
 

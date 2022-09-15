@@ -42,17 +42,6 @@ def get_palette(palette, num_classes):
         palette = np.random.randint(0, 256, size=(num_classes, 3))
         np.random.set_state(state)
         dataset_palette = [tuple(c) for c in palette]
-    elif palette == 'coco':
-        from mmdet.datasets import CocoDataset, CocoPanopticDataset
-        dataset_palette = CocoDataset.PALETTE
-        if len(dataset_palette) < num_classes:
-            dataset_palette = CocoPanopticDataset.PALETTE
-    elif palette == 'citys':
-        from mmdet.datasets import CityscapesDataset
-        dataset_palette = CityscapesDataset.PALETTE
-    elif palette == 'voc':
-        from mmdet.datasets import VOCDataset
-        dataset_palette = VOCDataset.PALETTE
     elif mmcv.is_str(palette):
         dataset_palette = [mmcv.color_val(palette)[::-1]] * num_classes
     else:

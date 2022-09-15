@@ -206,6 +206,7 @@ class CrossEntropyLoss(nn.Module):
                  reduction='mean',
                  class_weight=None,
                  ignore_index=None,
+                 bg_cls_weight=0.1,
                  loss_weight=1.0,
                  avg_non_ignore=False):
         """CrossEntropyLoss.

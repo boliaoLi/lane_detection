@@ -55,7 +55,7 @@ class LineOverlaps:
         return repr_str
 
 
-def line_overlaps(lines1, lines2,  length=1e-5, is_aligned=False, eps=1e-6):
+def line_overlaps(lines1, lines2, length=1e-5, is_aligned=False, eps=1e-6):
     """Calculate overlap between two set of bboxes.
     Args:
         lines1 (Tensor): shape (B, m, num_points) in <x1, x2, ..., xN>, N=num_points format or empty.
@@ -89,7 +89,7 @@ def line_overlaps(lines1, lines2,  length=1e-5, is_aligned=False, eps=1e-6):
         # overlap, union shape:[batch, m, num_points]
         eps = union.new_tensor([eps])
         union = torch.max(union, eps)
-        line_iou = 1 - (overlap / union).sum(dim=-1)
+        line_iou = 1 - (overlap / union)
         return line_iou
     else:
         overlap = torch.min(px2[..., :, None, :], tx2[..., None, :, :]) - torch.max(px1[..., :, None, :], tx1[..., None, :, :])

@@ -6,14 +6,15 @@ import numpy as np
 import pycocotools.mask as mask_util
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon
+from matplotlib.lines import Line2D
 
 from ..mask.structures import bitmap_to_polygon
 from ..utils import mask2ndarray
 from .palette import get_palette, palette_val
 
 __all__ = [
-    'color_val_matplotlib', 'draw_masks', 'draw_bboxes', 'draw_labels',
-    'imshow_det_bboxes', 'imshow_gt_det_bboxes'
+    'color_val_matplotlib', 'draw_lines', 'draw_labels',
+    'imshow_det_lines', 'imshow_gt_det_lines'
 ]
 
 EPS = 1e-2
@@ -29,7 +30,7 @@ def get_label_positions(lines):
     lines_y = lines[:, -2:]
     position_x = np.mean(lines_x, axis=1)
     position_y = np.mean(lines_y, axis=1)
-    position = np.concatenate([position_x, position_y],axis=1)
+    position = np.stack([position_x, position_y], axis=1)
     return position
 
 
@@ -95,7 +96,7 @@ def draw_lines(ax, lines, color='g', alpha=0.8, thickness=2):
     Args:
         ax (matplotlib.Axes): The input axes.
         lines (ndarray): The input lines with the shape
-            of (n, 72) in format(x1,x2,x3...,x72,y0,y1).
+            of (n, 72) in format(x1,x2,x3...,x70,y0,y1).
         color (list[tuple] | matplotlib.color): the colors for each
             bounding boxes.
         alpha (float): Transparency of bounding boxes. Default: 0.8.
@@ -104,14 +105,13 @@ def draw_lines(ax, lines, color='g', alpha=0.8, thickness=2):
     Returns:
         matplotlib.Axes: The result axes.
     """
-    polygons = []
+    polylines = []
     for i, line in enumerate(lines):
         line_int_x = line[:-2].astype(np.int32)
         line_int_y = np.linspace(line[-2], line[-1], len(line)-2).astype(np.int32)
-        np_poly = np.array([line_int_x, line_int_y]).T    # np_poly.shape = [num_points,2]
-        polygons.append(Polygon(np_poly))
+        polylines.append(Line2D(line_int_x, line_int_y))
     p = PatchCollection(
-        polygons,
+        polylines,
         facecolor='none',
         edgecolors=color,
         linewidths=thickness,
@@ -173,67 +173,26 @@ def draw_labels(ax,
     return ax
 
 
-def draw_masks(ax, img, masks, color=None, with_edge=True, alpha=0.8):
-    """Draw masks on the image and their edges on the axes.
-
-    Args:
-        ax (matplotlib.Axes): The input axes.
-        img (ndarray): The image with the shape of (3, h, w).
-        masks (ndarray): The masks with the shape of (n, h, w).
-        color (ndarray): The colors for each masks with the shape
-            of (n, 3).
-        with_edge (bool): Whether to draw edges. Default: True.
-        alpha (float): Transparency of bounding boxes. Default: 0.8.
-
-    Returns:
-        matplotlib.Axes: The result axes.
-        ndarray: The result image.
-    """
-    taken_colors = set([0, 0, 0])
-    if color is None:
-        random_colors = np.random.randint(0, 255, (masks.size(0), 3))
-        color = [tuple(c) for c in random_colors]
-        color = np.array(color, dtype=np.uint8)
-    polygons = []
-    for i, mask in enumerate(masks):
-        if with_edge:
-            contours, _ = bitmap_to_polygon(mask)
-            polygons += [Polygon(c) for c in contours]
-
-        color_mask = color[i]
-        while tuple(color_mask) in taken_colors:
-            color_mask = _get_bias_color(color_mask)
-        taken_colors.add(tuple(color_mask))
-
-        mask = mask.astype(bool)
-        img[mask] = img[mask] * (1 - alpha) + color_mask * alpha
-
-    p = PatchCollection(
-        polygons, facecolor='none', edgecolors='w', linewidths=1, alpha=0.8)
-    ax.add_collection(p)
-
-    return ax, img
-
-
 def imshow_det_lines(img,
-                      lines=None,
-                      labels=None,
-                      class_names=None,
-                      score_thr=0,
-                      line_color='green',
-                      text_color='green',
-                      thickness=2,
-                      font_size=8,
-                      win_name='',
-                      show=True,
-                      wait_time=0,
-                      out_file=None):
+                     lines=None,
+                     labels=None,
+                     scores=None,
+                     class_names=None,
+                     score_thr=0,
+                     line_color='random',
+                     text_color='random',
+                     thickness=2,
+                     font_size=8,
+                     win_name='',
+                     show=True,
+                     wait_time=0,
+                     out_file=None):
     """Draw lines and class labels (with scores) on an image.
 
     Args:
         img (str | ndarray): The image to be displayed.
-        lines (ndarray): Bounding boxes (with scores), shaped (n, 72) or
-            (n, 73).
+        lines (ndarray): lines, shaped (n, 72).
+        scores(ndarray）：scores of lines.
         labels (ndarray): Labels of lines.
         class_names (list[str]): Names of each classes.
         score_thr (float): Minimum score of bboxes to be shown. Default: 0.
@@ -242,11 +201,7 @@ def imshow_det_lines(img,
            The tuple of color should be in RGB order. Default: 'green'.
         text_color (list[tuple] | tuple | str | None): Colors of texts.
            If a single color is given, it will be applied to all classes.
-           The tuple of color should be in RGB order. Default: 'green'.
-        mask_color (list[tuple] | tuple | str | None, optional): Colors of
-           masks. If a single color is given, it will be applied to all
-           classes. The tuple of color should be in RGB order.
-           Default: None.
+           The tuple of color should be in RGB order. Default: 'random'.
         thickness (int): Thickness of lines. Default: 2.
         font_size (int): Font size of texts. Default: 13.
         show (bool): Whether to show the image. Default: True.
@@ -259,20 +214,19 @@ def imshow_det_lines(img,
         ndarray: The image with bboxes drawn on it.
     """
     assert lines is None or lines.ndim == 2, \
-        f' bboxes ndim should be 2, but its ndim is {lines.ndim}.'
-    assert labels.ndim == 1, \
+        f' lines ndim should be 2, but its ndim is {lines.ndim}.'
+    assert scores is None or scores.ndim == 1, \
+        f' scores ndim should be 1, but its ndim is {labels.ndim}.'
+    assert scores is None or scores.shape[0] == lines.shape[0], \
+        'scores.shape[0] should same as lines.shape[0].'
+    assert labels is not None and labels.ndim == 1, \
         f' labels ndim should be 1, but its ndim is {labels.ndim}.'
-    assert lines is None or lines.shape[1] == 74 or lines.shape[1] == 75, \
-        f' bboxes.shape[1] should be 72 or 73, but its {lines.shape[1]}.'
-    assert lines is None or lines.shape[0] <= labels.shape[0], \
-        'labels.shape[0] should not be less than bboxes.shape[0].'
+    assert labels is not None and lines.shape[0] == labels.shape[0], \
+        'labels.shape[0] should be same as lines.shape[0].'
 
     img = mmcv.imread(img).astype(np.uint8)
-    score_in_line = True if lines.shape[1] == 73 else False
-    if score_thr > 0:
-        assert lines is not None and lines.shape[1] == 73
-
-        scores = lines[:, -1]
+    score_in_line = True if scores is not None else False
+    if score_thr > 0 and score_in_line:
         inds = scores > score_thr
         lines = lines[inds, :]    # lines.shape[num_line_thr, num_points+1]
         labels = labels[inds]
@@ -301,16 +255,11 @@ def imshow_det_lines(img,
     num_lines = 0
     if lines is not None:
         num_lines = lines.shape[0]
-        bbox_palette = palette_val(get_palette(line_color, max_label + 1))
-        colors = [bbox_palette[label] for label in labels[:num_lines]]
+        line_palette = palette_val(get_palette(line_color, max_label + 1))
+        colors = [line_palette[label] for label in labels[:num_lines]]
         horizontal_alignment = 'left'
-        if score_in_line:
-            draw_lines(ax, lines[:, :-1], colors, alpha=0.8, thickness=thickness)
-            positions = get_label_positions(lines[:, :-1]).astype(np.int32) + thickness
-        else:
-            draw_lines(ax, lines[:, ], colors, alpha=0.8, thickness=thickness)
-            positions = get_label_positions(lines).astype(np.int32) + thickness
-        scores = lines[:, 4] if score_in_line else None
+        draw_lines(ax, lines, colors, alpha=0.8, thickness=thickness)
+        positions = get_label_positions(lines).astype(np.int32) + thickness
         draw_labels(
             ax,
             labels[:num_lines],
@@ -369,7 +318,7 @@ def imshow_gt_det_lines(img,
       img (str | ndarray): The image to be displayed.
       annotation (dict): Ground truth annotations where contain keys of
           'gt_lines' and 'gt_labels' or 'gt_masks'.
-      result (tuple[list] | list): The detection line result.
+      result (tuple[list] | list | dict): The detection line result.
       class_names (list[str]): Names of each classes.
       score_thr (float): Minimum score of lines to be shown. Default: 0.
       gt_line_color (list[tuple] | tuple | str | None): Colors of gt_lines.
@@ -406,41 +355,28 @@ def imshow_gt_det_lines(img,
     img = mmcv.imread(img)
 
     img = imshow_det_lines(
-        img,
-        gt_lines,
-        gt_labels,
+        img=img,
+        lines=gt_lines,
+        labels=gt_labels,
         class_names=class_names,
-        bbox_color=gt_line_color,
+        line_color=gt_line_color,
         text_color=gt_text_color,
         thickness=thickness,
         font_size=font_size,
         win_name=win_name,
         show=False)
 
-    if not isinstance(result, dict):
-        lines_result = result['pred_lines']
-        labels = [
-            np.full(line.shape[0], i, dtype=np.int32)
-            for i, line in enumerate(lines_result)
-        ]
-        labels = np.concatenate(labels)
-
-    else:
-        assert class_names is not None, 'We need to know the number ' \
-                                        'of classes.'
-        VOID = len(class_names)
-        lines = None
-        pan_results = result['pan_results']
-        # keep objects ahead
-        ids = np.unique(pan_results)[::-1]
-        legal_indices = ids != VOID
-        ids = ids[legal_indices]
-        labels = np.array([id % 1000 for id in ids], dtype=np.int64)
+    if isinstance(result, dict):
+        lines = result['pred_lines']
+        scores = result['pred_scores'] if 'scores' in result else None
+        assert 'pred_labels' in result, 'pred lines should have corresponding labels'
+        labels = result['pred_labels']
 
     img = imshow_det_lines(
-        img,
-        lines,
-        labels,
+        img=img,
+        lines=lines,
+        scores=scores,
+        labels=labels,
         class_names=class_names,
         score_thr=score_thr,
         line_color=det_line_color,
