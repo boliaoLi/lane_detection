@@ -1,0 +1,15 @@
+作物行检测作物行标注格式说明
+
+对于每一个annotation文件，需要包含以下内容：
+{
+        'filename': 'a.jpg',
+        'width': 1280,
+        'height': 720,
+        'ann': {
+            'lines_x': <np.ndarray, float32> (n, 72),      # 作物行72个点的横坐标
+            'lines_y': <np.ndarray, float32> (n, 2),       # 作物行纵坐标的起始与终止位置
+            'labels': <list> (n, ),                        # 作物行类别标签，
+            'lines_ignore': <np.ndarray, float32> (k, 72), # 需要忽略的作物行标注（可选字段）
+            'labels_ignore': <np.ndarray, int64> (k, )     #（可选字段）
+        }
+}

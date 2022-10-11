@@ -1,21 +1,54 @@
-from lanedet.models.detectors.single_stage import SingleStageDetector
-from lanedet.models.builder import build_detector
-import numpy as np
-import torch
-import json
+_base_ = ['../default_runtime.py']
+
+# dataset settings
+dataset_type = 'VegtableDataset'
+data_root = 'D:/model/lane_detection/data/'
+img_norm_cfg = dict(
+    mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
+train_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(type='LoadAnnotations', with_bbox=True),
+    dict(type='RandomFlip', flip_ratio=0.5),
+    dict(type='Normalize', **img_norm_cfg),
+    dict(type='Pad', size_divisor=32),
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels']),
+]
+test_pipeline = [
+    dict(type='LoadImageFromFile'),
+    dict(
+        type='MultiScaleFlipAug',
+        img_scale=(1333, 800),
+        flip=False,
+        transforms=[
+            dict(type='RandomFlip'),
+            dict(type='Normalize', **img_norm_cfg),
+            dict(type='Pad', size_divisor=32),
+            dict(type='ImageToTensor', keys=['img']),
+            dict(type='Collect', keys=['img']),
+        ])
+]
+data = dict(
+    samples_per_gpu=2,
+    workers_per_gpu=2,
+    train=dict(
+        type=dataset_type,
+        ann_file=data_root + 'labels/train/',
+        img_prefix=data_root + 'original_data/',
+        pipeline=train_pipeline),
+    val=dict(
+        type=dataset_type,
+        ann_file=data_root + 'labels/val/',
+        img_prefix=data_root + 'original_data/',
+        pipeline=test_pipeline),
+    test=dict(
+        type=dataset_type,
+        ann_file=data_root + 'labels/val/',
+        img_prefix=data_root + 'original_data/',
+        pipeline=test_pipeline))
 
 
-def read_gt():
-    with open(r'D:\model\lane_detection\demo\demo_label.json', 'r') as file:
-        str = file.read()
-        data = json.loads(str)
-    gt_lines = np.array(data['lines'])
-    gt_labels = [0, 0, 1]
-    return gt_lines, gt_labels
-
-
-def parse_init():
-    model = dict(
+model = dict(
         type='LaneFormerDetector',
         backbone=dict(
             type='ResNet',
@@ -73,31 +106,18 @@ def parse_init():
                 cls_cost=dict(type='ClassificationCost', weight=1.),
                 reg_cost=dict(type='LineL1Cost', weight=5.0))),
         test_cfg=dict(max_per_img=100))
-    h = 540
-    w = 960
-    img_metas = [
-        {'img_shape': (h, w, 3),
-         'scale_factor': 1,
-         'pad_shape': (h, w, 3),
-         'batch_input_shape': (h, w)
-    },
-        {'img_shape': (h, w, 3),
-         'scale_factor': 1,
-         'pad_shape': (h, w, 3),
-         'batch_input_shape': (h, w)
-    }]
-    return model, img_metas
 
+# evaluation = dict(interval=1, metric='bbox')
+work_dir = 'D:/model/lane_detection/work_dir'
 
-if __name__ == '__main__':
-    model, img_metas = parse_init()
-    detector = build_detector(model)
-    original_img = torch.rand(2, 3, 540, 960)
-    gt_lines, gt_labels = read_gt()
-    gt_lines = [torch.tensor(gt_lines, dtype=torch.float32), torch.tensor(gt_lines, dtype=torch.float32)]
-    gt_labels = [torch.tensor(gt_labels), torch.tensor(gt_labels)]
-    result = detector(original_img, img_metas, return_loss=True, gt_lines=gt_lines, gt_labels=gt_labels)
-    print(result)
-    print('done!')
-
-
+# optimizer
+optimizer = dict(
+    type='AdamW',
+    lr=0.0001,
+    weight_decay=0.0001,
+    paramwise_cfg=dict(
+        custom_keys={'backbone': dict(lr_mult=0.1, decay_mult=1.0)}))
+optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
+# learning policy
+lr_config = dict(policy='step', step=[100])
+runner = dict(type='EpochBasedRunner', max_epochs=150)

@@ -9,10 +9,10 @@ from mmcv.runner import (DistSamplerSeedHook, EpochBasedRunner,
                          Fp16OptimizerHook, OptimizerHook, build_optimizer,
                          build_runner, get_dist_info)
 
-from mmdet.core import DistEvalHook, EvalHook
-from mmdet.datasets import (build_dataloader, build_dataset,
+from lanedet.core import DistEvalHook, EvalHook
+from lanedet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
-from mmdet.utils import (build_ddp, build_dp, compat_cfg,
+from lanedet.utils import (build_ddp, build_dp, compat_cfg,
                          find_latest_checkpoint, get_root_logger)
 
 

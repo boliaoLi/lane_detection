@@ -24,6 +24,7 @@ class LaneFormerHead(AnchorFreeHead):
                  num_reg_fcs=2,
                  transformer=None,
                  sync_cls_avg_factor=False,
+                 loss_iou=None,
                  positional_encoding=dict(
                      type='SinePositionalEncoding',
                      num_feats=128,
@@ -34,14 +35,11 @@ class LaneFormerHead(AnchorFreeHead):
                      use_sigmoid=False,
                      loss_weight=1.0),
                  loss_line=dict(type='L1Loss', loss_weight=5.0),
-                 loss_iou=dict(type='LineIoULoss', loss_weight=2.0, length=1e-4),
                  train_cfg=dict(
                      assigner=dict(
                          type='HungarianAssigner',
                          cls_cost=dict(type='ClassificationCost', weight=1.),
-                         reg_cost=dict(type='LineL1Cost', weight=5.0),
-                         iou_cost=dict(
-                             type='LineIoUCost', weight=2.0))),
+                         reg_cost=dict(type='LineL1Cost', weight=5.0))),
                  test_cfg=dict(max_per_img=100),
                  init_cfg=None,
                  **kwargs):
@@ -80,9 +78,6 @@ class LaneFormerHead(AnchorFreeHead):
             assert loss_line['loss_weight'] == assigner['reg_cost'][
                 'weight'], 'The regression L1 weight for loss and matcher ' \
                 'should be exactly the same.'
-            assert loss_iou['loss_weight'] == assigner['iou_cost']['weight'], \
-                'The regression iou weight for loss and matcher should be' \
-                'exactly the same.'
             self.assigner = build_assigner(assigner)
             # DETR sampling=False, so use PseudoSampler
             sampler_cfg = dict(type='PseudoSampler')
@@ -97,8 +92,6 @@ class LaneFormerHead(AnchorFreeHead):
         self.fp16_enabled = False
         self.loss_cls = build_loss(loss_cls)
         self.loss_line = build_loss(loss_line)
-        self.loss_iou = build_loss(loss_iou)
-
         if self.loss_cls.use_sigmoid:
             self.cls_out_channels = num_classes
         else:
@@ -278,7 +271,7 @@ class LaneFormerHead(AnchorFreeHead):
         ]
         img_metas_list = [img_metas for _ in range(num_dec_layers)]
 
-        losses_cls, losses_line, losses_iou = multi_apply(
+        losses_cls, losses_line = multi_apply(
             self.loss_single, all_cls_scores, all_line_preds,
             all_gt_lines_list, all_gt_labels_list, img_metas_list,
             all_gt_lines_ignore_list)
@@ -287,15 +280,12 @@ class LaneFormerHead(AnchorFreeHead):
         # loss from the last decoder layer
         loss_dict['loss_cls'] = losses_cls[-1]
         loss_dict['loss_line'] = losses_line[-1]
-        loss_dict['loss_iou'] = losses_iou[-1]
         # loss from other decoder layers
         num_dec_layer = 0
-        for loss_cls_i, loss_line_i, loss_iou_i in zip(losses_cls[:-1],
-                                                       losses_line[:-1],
-                                                       losses_iou[:-1]):
+        for loss_cls_i, loss_line_i in zip(losses_cls[:-1],
+                                           losses_line[:-1]):
             loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
             loss_dict[f'd{num_dec_layer}.loss_line'] = loss_line_i
-            loss_dict[f'd{num_dec_layer}.loss_iou'] = loss_iou_i
             num_dec_layer += 1
         return loss_dict
 
@@ -357,16 +347,12 @@ class LaneFormerHead(AnchorFreeHead):
         # normalization purposes
         num_total_pos = loss_cls.new_tensor([num_total_pos])
         num_total_pos = torch.clamp(reduce_mean(num_total_pos), min=1).item()
-        print('line_targets.max():', line_targets.max())
         # regression IoU loss
         line_preds = line_preds.reshape(-1, self.num_points)
-        loss_iou = self.loss_iou(
-            line_preds, line_targets, line_weights, aligned=True)
-
         # regression L1 loss
         loss_line = self.loss_line(
             line_preds, line_targets, line_weights, avg_factor=num_total_pos)
-        return loss_cls, loss_line, loss_iou
+        return loss_cls, loss_line
 
 
     def get_targets(self,

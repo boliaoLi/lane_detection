@@ -17,7 +17,7 @@ def model_init():
     config = ConfigDict(
         dict(
             type='LaneFormerHead',
-            num_points=72,
+            num_points=74,
             num_classes=12,
             in_channels=200,
             transformer=dict(
@@ -59,14 +59,12 @@ def model_init():
                 type='CrossEntropyLoss',
                 use_sigmoid=False,
                 loss_weight=1.0),
-            loss_line=dict(type='L1Loss', loss_weight=5.0),
-            loss_iou=dict(type='LineIoULoss', loss_weight=2.0)),
+            loss_line=dict(type='L1Loss', loss_weight=5.0)),
         train_cfg=dict(
             assigner=dict(
                 type='HungarianAssigner',
                 cls_cost=dict(type='ClassificationCost', weight=1.),
-                reg_cost=dict(type='BBoxL1Cost', weight=5.0, box_format='xywh'),
-                iou_cost=dict(type='IoUCost', iou_mode='giou', weight=2.0))),
+                reg_cost=dict(type='LineL1Cost', weight=5.0))),
         test_cfg=dict(max_per_img=100)
     )
     s = 256
@@ -87,7 +85,7 @@ def model_init():
     feat = [torch.rand(2, 200, 10, 10)]
     cls_scores, line_preds = self.forward(feat, img_metas)
     print(f'cls_scores:{cls_scores}, line_preds:{line_preds}')
-    gt_lines = [torch.rand((4, 72)), torch.rand(5, 72)]
+    gt_lines = [torch.rand((4, 74)), torch.rand(5, 74)]
     gt_labels = [torch.LongTensor([1, 1, 0, 0]), torch.LongTensor([1, 1, 2, 0, 2])]
     gt_bboxes_ignore = None
     empty_gt_losses = self.loss(cls_scores, line_preds, gt_lines, gt_labels,
@@ -100,4 +98,4 @@ if __name__ == '__main__':
     model_init()
     print_hi('PyCharm')
 
-# 访问 https://www.jetbrains.com/help/pycharm/ 获取 PyCharm 帮助
+

@@ -4,7 +4,7 @@ import numpy as np
 
 
 def test_gt_det_lines():
-    img = 'demo/demo_img.jpg'
+    img = 'D:\model\lane_detection\demo\demo_img.jpg'
     class_names = ['cat', 'dog', 'sheep', 'elephant']
 
     # 构造测试ground truth

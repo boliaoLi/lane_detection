@@ -1,5 +1,6 @@
 from .builder import build_linear_layer, build_transformer
 from .ckpt_convert import pvt_convert
+from .csp_layer import CSPLayer
 from .make_divisible import make_divisible
 from .positional_encoding import (LearnedPositionalEncoding,
                                   SinePositionalEncoding)
@@ -12,7 +13,7 @@ from .transformer import (DetrTransformerDecoder, DetrTransformerDecoderLayer,
 __all__ = ['build_linear_layer', 'build_transformer', 'make_divisible',
            'LearnedPositionalEncoding', 'SinePositionalEncoding',
            'InvertedResidual', 'ResLayer', 'SimplifiedBasicBlock',
-           'DyReLU', 'SELayer',
+           'DyReLU', 'SELayer', 'CSPLayer',
            'DetrTransformerDecoder', 'DetrTransformerDecoderLayer',
            'DynamicConv', 'PatchEmbed', 'Transformer', 'nchw_to_nlc',
            'nlc_to_nchw'
