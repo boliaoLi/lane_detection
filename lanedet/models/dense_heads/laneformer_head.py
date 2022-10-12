@@ -126,6 +126,11 @@ class LaneFormerHead(AnchorFreeHead):
         self.fc_reg = Linear(self.embed_dims, self.num_points)
         self.query_embedding = nn.Embedding(self.num_query, self.embed_dims)
 
+    def init_weights(self):
+        """Initialize weights of the transformer head."""
+        # The initialization for transformer is important
+        self.transformer.init_weights()
+
     def forward(self, feats, img_metas):
         """Forward function.
 
@@ -525,7 +530,6 @@ class LaneFormerHead(AnchorFreeHead):
 
         return result_list
 
-    # ToDo 这里修改完应该就差不多了
     def _get_bboxes_single(self,
                            cls_score,
                            bbox_pred,
