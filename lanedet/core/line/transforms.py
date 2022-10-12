@@ -7,19 +7,20 @@ def line2result(lines, labels, num_classes):
     """Convert detection results to a list of numpy arrays.
 
     Args:
-        lines (torch.Tensor | np.ndarray): shape (n, 73) with format(x1,x2,...xN,y1,y2,score)
+        lines (torch.Tensor | np.ndarray): shape (n, 75)
         labels (torch.Tensor | np.ndarray): shape (n, )
         num_classes (int): class number, including background class
 
     Returns:
-        list: [lines(ndarray), labels(ndarray)]
+        list(ndarray): bbox results of each class
     """
-    assert isinstance(lines, (torch.Tensor, np.ndarray)) and isinstance(labels, (torch.Tensor, np.ndarray)),\
-    "Don't support this format of (lines, labels)"
-
-    lines = lines.detach().numpy() if isinstance(lines, torch.Tensor) else lines
-    labels = labels.detach().numpy() if isinstance(labels, torch.Tensor) else labels
-    return [lines, labels]
+    if lines.shape[0] == 0:
+        return [np.zeros((0, 74), dtype=np.float32) for i in range(num_classes)]
+    else:
+        if isinstance(lines, torch.Tensor):
+            lines = lines.detach().cpu().numpy()
+            labels = labels.detach().cpu().numpy()
+        return [lines[labels == i, :] for i in range(num_classes)]
 
 
 def find_inside_bboxes(bboxes, img_h, img_w):

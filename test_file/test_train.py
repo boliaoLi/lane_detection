@@ -20,7 +20,7 @@ import warnings
 
 
 def parse_args():
-    config_file = 'D:/model/lane_detection/configs/datasets/vegetabel.py'
+    config_file = 'D:/model/lane_detection/configs/detr/detr_vegetabel.py'
 
     parser = argparse.ArgumentParser(description='Train a detector')
     parser.add_argument('--config', help='train config file path', default=config_file)

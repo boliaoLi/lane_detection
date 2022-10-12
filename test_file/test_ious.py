@@ -28,8 +28,8 @@ if __name__ == '__main__':
         gt_line = np.append(gt_line, [0, 1080])
         gt_lines.append(gt_line)
     gt_lines = np.stack(gt_lines)
-    det_lines = []
 
+    det_lines = []
     for i in range(1, 7):
         det_line = np.linspace(100*i+3*i, 100*i+100+3*i, 72)
         det_line = np.append(det_line, [0, 1080])

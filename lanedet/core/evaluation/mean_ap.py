@@ -59,10 +59,11 @@ def average_precision(recalls, precisions, mode='area'):
 
 def tpfp_default(det_lines,
                  gt_lines,
-                 length,
                  gt_lines_ignore=None,
+                 iou_thr=0.5,
                  area_ranges=None,
-                 iou_thr=0.5):
+
+                 *args):
     """Check if detected bboxes are true positive or false positive.
 
     Args:
@@ -87,7 +88,6 @@ def tpfp_default(det_lines,
         gt_ignore_inds = np.zeros(gt_lines.shape[0], dtype=np.bool)
         # stack gt_bboxes and gt_bboxes_ignore for convenience
 
-
     num_dets = det_lines.shape[0]
     num_gts = gt_lines.shape[0]
     # tp and fp are of shape (num_scales, num_gts), each row is tp or fp of
@@ -98,12 +98,13 @@ def tpfp_default(det_lines,
     tp = np.zeros((num_scales, num_dets), dtype=np.float32)
     fp = np.zeros((num_scales, num_dets), dtype=np.float32)
 
-    # if there is no gt bboxes in this image, then all det bboxes
+    # if there is no gt lines in this image, then all det bboxes
     # within area range are false positives
     if gt_lines.shape[0] == 0:
         fp[...] = 1
         return tp, fp
-    ious = line_overlaps(det_lines, gt_lines, length=length)
+    det = det_lines[:, :-1] if det_lines.shape[1] == 75 else det_lines
+    ious = line_overlaps(det, gt_lines)
     # for each det, the max iou with all gts
     ious_max = ious.max(axis=1)
     # for each det, which gt overlaps most with it
@@ -140,13 +141,13 @@ def get_cls_results(det_results, annotations, class_id):
     cls_gts_ignore = []
     for ann in annotations:
         gt_inds = ann['labels'] == class_id
-        cls_gts.append(ann['bboxes'][gt_inds, :])
+        cls_gts.append(ann['lines'][gt_inds, :])
 
         if ann.get('labels_ignore', None) is not None:
             ignore_inds = ann['labels_ignore'] == class_id
-            cls_gts_ignore.append(ann['bboxes_ignore'][ignore_inds, :])
+            cls_gts_ignore.append(ann['lines_ignore'][ignore_inds, :])
         else:
-            cls_gts_ignore.append(np.empty((0, 4), dtype=np.float32))
+            cls_gts_ignore.append(np.empty((0, 74), dtype=np.float32))
 
     return cls_dets, cls_gts, cls_gts_ignore
 

@@ -108,10 +108,12 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
         if num_augs != len(img_metas):
             raise ValueError(f'num of augmentations ({len(imgs)}) '
                              f'!= num of image meta ({len(img_metas)})')
-
+        if not isinstance(img_metas[0], list):
+            img_metas = img_metas[0].data
         # NOTE the batched image size information may be useful, e.g.
         # in DETR, this is needed for the construction of masks, which is
         # then used for the transformer_head.
+        # img_metas = img_metas.data
         for img, img_meta in zip(imgs, img_metas):
             batch_size = len(img_meta)
             for img_id in range(batch_size):
@@ -130,7 +132,7 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
             assert imgs[0].size(0) == 1, 'aug test does not support ' \
                                          'inference with batch size ' \
                                          f'{imgs[0].size(0)}'
-            # TODO: support test augmentation for predefined proposals
+
             assert 'proposals' not in kwargs
             return self.aug_test(imgs, img_metas, **kwargs)
 

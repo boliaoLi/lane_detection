@@ -102,7 +102,6 @@ class Resize:
         self.multiscale_mode = multiscale_mode
         self.ratio_range = ratio_range
         self.keep_ratio = keep_ratio
-        # TODO: refactor the override option in Resize
         self.interpolation = interpolation
         self.override = override
         self.bbox_clip_border = bbox_clip_border
@@ -237,7 +236,7 @@ class Resize:
                     backend=self.backend)
             results[key] = img
 
-            scale_factor = np.array([w_scale, h_scale, w_scale, h_scale],
+            scale_factor = np.array([w_scale, h_scale],
                                     dtype=np.float32)
             results['img_shape'] = img.shape
             # in case that there is no padding
@@ -247,13 +246,13 @@ class Resize:
 
     def _resize_bboxes(self, results):
         """Resize bounding boxes with ``results['scale_factor']``."""
-        for key in results.get('bbox_fields', []):
-            bboxes = results[key] * results['scale_factor']
+        for key in results.get('line_fields', []):
+            lines = results[key] * results['scale_factor']
             if self.bbox_clip_border:
                 img_shape = results['img_shape']
-                bboxes[:, 0::2] = np.clip(bboxes[:, 0::2], 0, img_shape[1])
-                bboxes[:, 1::2] = np.clip(bboxes[:, 1::2], 0, img_shape[0])
-            results[key] = bboxes
+                lines[:, -2:] = np.clip(lines[:, -2:], 0, img_shape[1])
+                lines[:, :-2] = np.clip(lines[:, :-2], 0, img_shape[0])
+            results[key] = lines
 
     def _resize_masks(self, results):
         """Resize masks with ``results['scale']``"""
@@ -393,11 +392,11 @@ class RandomFlip:
         if isinstance(flip_ratio, list):
             assert len(self.flip_ratio) == len(self.direction)
 
-    def bbox_flip(self, bboxes, img_shape, direction):
+    def line_flip(self, lines, img_shape, direction):
         """Flip bboxes horizontally.
 
         Args:
-            bboxes (numpy.ndarray): Bounding boxes, shape (..., 4*k)
+            lines (numpy.ndarray): Bounding boxes, shape (..., k, 74)
             img_shape (tuple[int]): Image shape (height, width)
             direction (str): Flip direction. Options are 'horizontal',
                 'vertical'.
@@ -406,23 +405,19 @@ class RandomFlip:
             numpy.ndarray: Flipped bounding boxes.
         """
 
-        assert bboxes.shape[-1] % 4 == 0
-        flipped = bboxes.copy()
+        assert lines.shape[-1] % 74 == 0
+        flipped = lines.copy()
         if direction == 'horizontal':
             w = img_shape[1]
-            flipped[..., 0::4] = w - bboxes[..., 2::4]
-            flipped[..., 2::4] = w - bboxes[..., 0::4]
+            flipped[..., :-2] = w - lines[..., :-2]
         elif direction == 'vertical':
             h = img_shape[0]
-            flipped[..., 1::4] = h - bboxes[..., 3::4]
-            flipped[..., 3::4] = h - bboxes[..., 1::4]
+            flipped[..., -2:] = h - lines[..., -2:]
         elif direction == 'diagonal':
             w = img_shape[1]
             h = img_shape[0]
-            flipped[..., 0::4] = w - bboxes[..., 2::4]
-            flipped[..., 1::4] = h - bboxes[..., 3::4]
-            flipped[..., 2::4] = w - bboxes[..., 0::4]
-            flipped[..., 3::4] = h - bboxes[..., 1::4]
+            flipped[..., :-2] = w - lines[..., :-2]
+            flipped[..., -2:] = h - lines[..., -2:]
         else:
             raise ValueError(f"Invalid flipping direction '{direction}'")
         return flipped
@@ -469,7 +464,7 @@ class RandomFlip:
                     results[key], direction=results['flip_direction'])
             # flip bboxes
             for key in results.get('bbox_fields', []):
-                results[key] = self.bbox_flip(results[key],
+                results[key] = self.line_flip(results[key],
                                               results['img_shape'],
                                               results['flip_direction'])
             # flip masks
@@ -534,16 +529,16 @@ class RandomShift:
             # TODO: support mask and semantic segmentation maps.
             for key in results.get('bbox_fields', []):
                 bboxes = results[key].copy()
-                bboxes[..., 0::2] += random_shift_x
-                bboxes[..., 1::2] += random_shift_y
+                bboxes[..., :-2] += random_shift_x
+                bboxes[..., -2:] += random_shift_y
 
                 # clip border
-                bboxes[..., 0::2] = np.clip(bboxes[..., 0::2], 0, img_shape[1])
-                bboxes[..., 1::2] = np.clip(bboxes[..., 1::2], 0, img_shape[0])
+                bboxes[..., -2:] = np.clip(bboxes[..., -2:], 0, img_shape[1])
+                bboxes[..., :-2] = np.clip(bboxes[..., :-2], 0, img_shape[0])
 
                 # remove invalid bboxes
-                bbox_w = bboxes[..., 2] - bboxes[..., 0]
-                bbox_h = bboxes[..., 3] - bboxes[..., 1]
+                bbox_w = bboxes[..., -2:]
+                bbox_h = bboxes[..., :-2]
                 valid_inds = (bbox_w > self.filter_thr_px) & (
                     bbox_h > self.filter_thr_px)
                 # If the shift does not contain any gt-bbox area, skip this
@@ -1112,10 +1107,10 @@ class Expand:
         expand_img[top:top + h, left:left + w] = img
 
         results['img'] = expand_img
-        # expand bboxes
-        for key in results.get('bbox_fields', []):
-            results[key] = results[key] + np.tile(
-                (left, top), 2).astype(results[key].dtype)
+        # # expand bboxes
+        # for key in results.get('bbox_fields', []):
+        #     results[key] = results[key] + np.tile(
+        #         (left, top), 2).astype(results[key].dtype)
 
         # expand masks
         for key in results.get('mask_fields', []):

@@ -1,0 +1,4 @@
+计算line_iou时，记得去D:\model\lane_detection\lanedet\core\evaluation\line_overlaps.py
+这里检查一下line_ioude length,如果不合适要记得改
+
+

@@ -203,7 +203,8 @@ class ClassificationCost:
         # The 1 is a constant that doesn't change the matching,
         # so it can be omitted.
         cls_score = cls_pred.softmax(-1)
-        cls_cost = -cls_score[:, gt_labels]
+        a = gt_labels.clone().detach().long()
+        cls_cost = -cls_score[:, a]
         return cls_cost * self.weight
 
 

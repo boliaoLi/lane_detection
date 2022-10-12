@@ -258,7 +258,7 @@ class LoadAnnotations:
         if gt_bboxes_ignore is not None:
             results['gt_lines_ignore'] = gt_bboxes_ignore.copy()
             results['bbox_fields'].append('gt_lines_ignore')
-        results['bbox_fields'].append('gt_bboxes')
+        results['bbox_fields'].append('gt_lines')
 
         gt_is_group_ofs = ann_info.get('gt_is_group_ofs', None)
         if gt_is_group_ofs is not None:

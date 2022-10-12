@@ -2,7 +2,7 @@
 import numpy as np
 
 
-def line_overlaps(lines1, lines2, length, is_aligned=False, eps=1e-6):
+def line_overlaps(lines1, lines2, length=20, is_aligned=False, eps=1e-6):
     """Calculate overlap between two set of bboxes.
     Args:
         lines1 (ndarray): shape (m, num_points) in <x1, x2, ..., xN, y1, y2>, N=num_points format or empty.

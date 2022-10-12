@@ -105,7 +105,6 @@ class SingleStageDetector(BaseDetector):
             line2result(det_lines, det_labels, self.line_head.num_classes)
             for det_lines, det_labels in results_list
         ]
-        # line_results format list[list[ndarray]], num_img, num_lines
         return line_results
 
     def aug_test(self, imgs, img_metas, rescale=False):

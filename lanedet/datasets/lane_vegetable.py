@@ -22,7 +22,7 @@ import json
 @DATASETS.register_module()
 class VegtableDataset(CustomDataset):
 
-    CLASSES = ('crop_line', 'person', 'bicycle', 'car')
+    CLASSES = ('background', 'crop_line', 'coushude1', 'coushude2')
     PALETTE = [(220, 20, 60), (119, 11, 32), (0, 0, 142), (0, 0, 230)]
 
     def load_annotation(self, file):

@@ -460,7 +460,7 @@ class LaneFormerHead(AnchorFreeHead):
         labels = gt_lines.new_full((num_lines,),
                                     self.num_classes,
                                     dtype=torch.long)
-        labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds]
+        labels[pos_inds] = gt_labels[sampling_result.pos_assigned_gt_inds].long()
         label_weights = gt_lines.new_ones(num_lines)
 
         # line targets
@@ -471,7 +471,7 @@ class LaneFormerHead(AnchorFreeHead):
 
         # laneformer regress the relative position of lines in the image.
         # Thus the learning target should be normalized by the image size
-        factor = torch.full(gt_lines.size(), img_w)
+        factor = torch.full(gt_lines.size(), img_w).to(gt_lines.device)
         factor[:, -2:] = img_h
         pos_gt_lines_targets = sampling_result.pos_gt_bboxes / factor
         line_targets[pos_inds] = pos_gt_lines_targets
@@ -525,6 +525,7 @@ class LaneFormerHead(AnchorFreeHead):
 
         return result_list
 
+    # ToDo 这里修改完应该就差不多了
     def _get_bboxes_single(self,
                            cls_score,
                            bbox_pred,
@@ -576,7 +577,8 @@ class LaneFormerHead(AnchorFreeHead):
         det_bboxes[:, :-2].clamp_(min=0, max=img_shape[1])
         det_bboxes[:, -2:].clamp_(min=0, max=img_shape[0])
         if rescale:
-            det_bboxes /= det_bboxes.new_tensor(scale_factor)
+            det_bboxes[:, :-2] /= det_bboxes[:, :-2].new_tensor(scale_factor[0])
+            det_bboxes[:, -2:] /= det_bboxes[:, -2:].new_tensor(scale_factor[1])
         det_bboxes = torch.cat((det_bboxes, scores.unsqueeze(1)), -1)
 
         return det_bboxes, det_labels
