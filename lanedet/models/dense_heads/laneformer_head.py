@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import copy
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -431,7 +432,7 @@ class LaneFormerHead(AnchorFreeHead):
             cls_score (Tensor): Box score logits from a single decoder layer
                 for one image. Shape [num_query, cls_out_channels].
             line_pred (Tensor): Sigmoid outputs from a single decoder layer
-                for one image, shape [num_query, 72].
+                for one image, shape [num_query, 74].
             gt_lines (Tensor): Ground truth bboxes for one image with
                 shape (num_gts, 72).
             gt_labels (Tensor): Ground truth class indices for one image

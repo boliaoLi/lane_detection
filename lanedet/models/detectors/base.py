@@ -267,7 +267,7 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
 
         Args:
             img (str or Tensor): The image to be displayed.
-            result(list[Tensor]): the results to draw over 'img', format should be (line_preds, labels)
+            result(list[Tensor]): the results to draw over 'img', format should be len(result)=num_classes
             line_preds.shape=[num_lines, 72+1], labels.shape[num_lines].
             score_thr (float, optional): Minimum score of bboxes to be shown.
                 Default: 0.3.
@@ -290,13 +290,14 @@ class BaseDetector(BaseModule, metaclass=ABCMeta):
         """
         img = mmcv.imread(img)
         img = img.copy()
-        pred_lines, pred_labels = result
-        pred_lines = pred_lines[..., :-1]
-        pred_scores = pred_lines[..., -1]
+        assert len(result) == len(self.CLASSES), \
+            "the output results num_classes should be same as the input num_classes"
         # if out_file specified, do not show image in window
         if out_file is not None:
             show = False
-
+        pred_lines = np.concatenate([result[i][..., :-1] for i in range(len(result))])
+        pred_scores = np.concatenate([result[i][..., -1] for i in range(len(result))])
+        pred_labels = np.concatenate([np.full(result[i].shape[0], i) for i in range(len(result))])
         # draw lines
         img = imshow_det_lines(
             img,

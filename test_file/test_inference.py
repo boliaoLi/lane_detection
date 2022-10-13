@@ -12,16 +12,16 @@ from mmcv.cnn import fuse_conv_bn
 from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
                          wrap_fp16_model)
 
-from mmdet.apis import multi_gpu_test, single_gpu_test
-from mmdet.datasets import (build_dataloader, build_dataset,
+from lanedet.apis import multi_gpu_test, single_gpu_test
+from lanedet.datasets import (build_dataloader, build_dataset,
                             replace_ImageToTensor)
-from mmdet.models import build_detector
-from mmdet.utils import (build_ddp, build_dp, compat_cfg, get_device,
+from lanedet.models import build_detector
+from lanedet.utils import (build_ddp, build_dp, compat_cfg, get_device,
                          setup_multi_processes, update_data_root)
 
 
 config_path = 'D:/model/lane_detection/configs/detr/detr_vegetabel.py'
-checkpoint_path = 'epoch_32.pth'
+checkpoint_path = 'D:/model/lane_detection/epoch_173.pth'
 show_dir = 'result'
 
 

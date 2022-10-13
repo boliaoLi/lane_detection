@@ -191,7 +191,7 @@ def imshow_det_lines(img,
 
     Args:
         img (str | ndarray): The image to be displayed.
-        lines (ndarray): lines, shaped (n, 72).
+        lines (ndarray): lines, shaped (n, 74).
         scores(ndarray）：scores of lines.
         labels (ndarray): Labels of lines.
         class_names (list[str]): Names of each classes.

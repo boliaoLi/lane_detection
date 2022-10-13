@@ -53,9 +53,8 @@ def single_gpu_test(model,
                 model.module.show_result(
                     img_show,
                     result[i],
-                    bbox_color=PALETTE,
+                    line_color=PALETTE,
                     text_color=PALETTE,
-                    mask_color=PALETTE,
                     show=show,
                     out_file=out_file,
                     score_thr=show_score_thr)
