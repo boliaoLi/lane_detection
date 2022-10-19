@@ -1,5 +1,5 @@
 _base_ = [
-  '../_base_/datasets/vegetabel.py', '../_base_/default_runtime.py'
+  '../_base_/datasets/Tusimple.py', '../_base_/default_runtime.py'
 ]
 
 
@@ -80,3 +80,5 @@ optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
 # learning policy
 lr_config = dict(policy='step', step=[100])
 runner = dict(type='EpochBasedRunner', max_epochs=150)
+
+

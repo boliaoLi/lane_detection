@@ -2,8 +2,8 @@ from mmcv import Config, DictAction
 from lanedet.datasets import build_dataset,build_dataloader
 
 if __name__ == '__main__':
-    cfg_file = '/configs/_base_/datasets/vegetabel.py'
-    cfg = Config.fromfile(cfg_file)
+    config_file = r'D:\model\lane_detection\configs\_base_\datasets\Tusimple.py'
+    cfg = Config.fromfile(config_file)
     datasets = [build_dataset(cfg.data.train)]
     runner_type = 'EpochBasedRunner' if 'runner' not in cfg else cfg.runner[
         'type']
@@ -22,8 +22,9 @@ if __name__ == '__main__':
     }
 
     data_loaders = [build_dataloader(ds, **train_loader_cfg) for ds in datasets]
+    j = 0
     for data_loader in data_loaders:
         for i, data_batch in enumerate(data_loader):
-            print(data_batch)
-
+            j += 1
+            print(j)
     print("芜湖！起飞！")
